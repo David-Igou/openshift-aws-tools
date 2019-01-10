@@ -1,0 +1,8 @@
+---
+- name: set hostname to FQDN
+  hosts: "{{ target }}"
+  become: yes
+  tasks:
+  - name: set /etc/hostname to FQDN
+    hostname:
+      name: "{{ ansible_fqdn }}"

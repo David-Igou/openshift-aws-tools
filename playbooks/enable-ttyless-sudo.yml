@@ -1,0 +1,19 @@
+---
+
+# ansible-playbook -i yourinventory enable-ttyless-sudo.yml --extra-vars="target=<<target-name>> user=<<user-name>>"
+
+- name: Allow user whoms't you plan on running the Openshift user with to sudo ttyless
+  hosts: "{{ target }}"
+
+  become: yes
+
+
+  tasks:
+
+  - lineinfile:
+      path: /etc/sudoers
+      state: present
+      insertafter: '^Defaults    requiretty'
+      line: 'Defaults:{{ user }} !requiretty'
+      validate: '/usr/sbin/visudo -cf %s'
+    when: user is defined

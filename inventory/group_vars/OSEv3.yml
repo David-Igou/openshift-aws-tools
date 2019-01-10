@@ -1,0 +1,22 @@
+---
+openshift_master_ldap_ca_file: "{{ inventory_dir }}/files/path/to/ca.cer"
+openshift_master_htpasswd_file: "{{ inventory_dir }}/files/path/to/htpasswd-file"
+
+openshift_master_identity_providers:
+ - name: 'htpasswd_auth'
+   login: 'true'
+   challenge: 'true'
+   kind: 'HTPasswdPasswordIdentityProvider'
+ - name: 'LDAP Login'
+   login: 'true'
+   challenge: 'true'
+   kind: 'LDAPPasswordIdentityProvider'
+   attributes:
+     id: ['dn']
+     email: ['mail']
+     name: ['cn']
+     preferredUsername: ['uid']
+   bindDN: ""
+   bindPassword: ""
+   url: ""
+   insecure: false

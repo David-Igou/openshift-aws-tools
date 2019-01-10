@@ -1,0 +1,192 @@
+# This file is based off the 3.11.43 example inventory. I do not know if there are any updates as I wrote this in November. 
+# I will be inserting comments on AWS specific practices and removing comments that aren't directly relevant to AWS. Please refer to openshift-ansible's example inventory for those.
+# If a variable is not present, I have not tested anything other than its default.
+
+#Hosts:
+#In AWS the private VPC DNS resolutions need to be used. This is a requirement for the CloudProvider plugin to work. 
+#It is good practice to work in compliance with the CP plugin even if you aren't currently using it in order easily switch over to it if a feature you want to consume is released
+#If you want pretty DNS entries use cnames.
+
+[masters]
+ip-10-240-3-x.ec2.internal 
+ip-10-240-3-x.ec2.internal 
+ip-10-240-2-x.ec2.internal
+
+[etcd]
+ip-10-240-3-x.ec2.internal 
+ip-10-240-3-x.ec2.internal 
+ip-10-240-2-x.ec2.internal
+
+
+[nodes]
+ip-10-240-3-x.ec2.internal openshift_node_group_name='node-config-master'  
+ip-10-240-3-x.ec2.internal openshift_node_group_name='node-config-master'  
+ip-10-240-2-x.ec2.internal openshift_node_group_name='node-config-master'
+ip-10-240-1-x.ec2.internal openshift_node_group_name='node-config-infra'
+ip-10-240-1-x.ec2.internal openshift_node_group_name='node-config-infra'
+ip-10-240-3-x.ec2.internal openshift_node_group_name='node-config-infra'  
+ip-10-240-2-x.ec2.internal openshift_node_group_name='node-config-compute'
+ip-10-240-1-x.ec2.internal openshift_node_group_name='node-config-compute'
+ip-10-240-3-x.ec2.internal openshift_node_group_name='node-config-compute'
+
+# Create an OSEv3 group that contains the masters and nodes groups
+[OSEv3:children]
+masters
+nodes
+etcd
+#lb
+
+[OSEv3:vars]
+openshift_disable_check=memory_availability
+###############################################################################
+# Common/ Required configuration variables follow                             #
+###############################################################################
+
+#Ensure your ec2's allow ttyless sudo!
+ansible_user=ec2-user
+
+# If ansible_user is not root, ansible_become must be set to true and the
+# user must be configured for passwordless sudo
+ansible_become=true
+ansible_become_method=sudo
+# Specify the deployment type. Valid values are origin and openshift-enterprise.
+#openshift_deployment_type=origin
+openshift_deployment_type=openshift-enterprise
+
+
+openshift_release="3.11.43"
+
+# default subdomain to use for exposed routes, you should have wildcard dns
+# for *.apps.test.example.com that points at your infra nodes which will run
+# your router
+
+# In AWS this would resolve to your ELB. 
+# Ensure ELBs are set to target by IP and not instance. 
+# Weird failures happened when forwarding by instance. If anybody has information on this please let me know.
+openshift_master_default_subdomain=apps.test.example.com
+
+
+###############################################################################
+# Additional configuration variables follow                                   #
+###############################################################################
+
+debug_level=2
+
+
+openshift_image_tag=v3.11.43
+
+# Specify an exact rpm version to install or configure.
+# WARNING: This value will be used for all hosts in RPM based environments, even those that have another version installed.
+# This could potentially trigger an upgrade and downtime, so be careful with modifying this value after the cluster is set up.
+#openshift_pkg_version=-3.11.43
+
+
+system_images_registry="registry.redhat.io"
+openshift_install_examples=true
+
+oreg_url=registry.access.redhat.com/openshift3/ose-${component}:${version} 
+openshift_examples_modify_imagestreams=true
+
+
+# htpasswd auth
+openshift_master_identity_providers=[{'name': 'htpasswd_auth', 'login': 'true', 'challenge': 'true', 'kind': 'HTPasswdPasswordIdentityProvider'}]
+openshift_master_htpasswd_file=/path/to/htpassswd-file
+
+# Cloud Provider Configuration
+#
+# Note: You may make use of environment variables rather than store
+# sensitive configuration within the ansible inventory.
+# For example:
+#openshift_cloudprovider_aws_access_key="{{ lookup('env','AWS_ACCESS_KEY_ID') }}"
+#openshift_cloudprovider_aws_secret_key="{{ lookup('env','AWS_SECRET_ACCESS_KEY') }}"
+#
+# AWS
+openshift_cloudprovider_kind=aws
+
+
+#Every master host, node host, and subnet must have the kubernetes.io/cluster/<clusterid>,Value=(owned|shared) tag.
+#One security group, preferably the one linked to the nodes, must have the kubernetes.io/cluster/<clusterid>,Value=(owned|shared) tag.
+openshift_clusterid=my-openshift-aws-lab
+# Note: IAM profiles may be used instead of storing API credentials on disk.
+#openshift_cloudprovider_aws_access_key=aws_access_key_id
+#openshift_cloudprovider_aws_secret_key=aws_secret_access_key
+#
+
+
+
+# Enable cockpit
+osm_use_cockpit=true
+# Set cockpit plugins
+osm_cockpit_plugins=['cockpit-kubernetes']
+
+
+
+#The following DNS entries need to resolve to an ELB which resolves to your Masters. Both DNS entries can resolve to the same ELB or you can have separate. I used the same for console-int and console.
+
+# Native high availability (default cluster method)
+# If no lb group is defined, the installer assumes that a load balancer has
+# been preconfigured. For installation the value of
+# openshift_master_cluster_hostname must resolve to the load balancer
+# or to one or all of the masters defined in the inventory if no load
+# balancer is present.
+openshift_master_cluster_hostname=console-int.test.example.com
+# If an external load balancer is used public hostname should resolve to
+# external load balancer address
+openshift_master_cluster_public_hostname=console.test.example.com
+
+
+# OpenShift Router Options
+openshift_hosted_router_selector='node-role.kubernetes.io/infra=true'
+openshift_hosted_router_replicas=3
+
+# Openshift Registry Options
+openshift_hosted_registry_selector='node-role.kubernetes.io/infra=true'
+openshift_hosted_registry_replicas=3
+
+
+# AWS S3 REGISTRY
+# https://docs.docker.com/registry/storage-drivers/s3/#parameters
+# https://docs.openshift.com/container-platform/3.11/install_config/configuring_aws.html#configuring-aws-permissions
+# S3 bucket must already exist.
+
+openshift_hosted_manage_registry=true
+openshift_hosted_registry_storage_kind=object
+openshift_hosted_registry_storage_provider=s3
+openshift_hosted_registry_storage_s3_encrypt=false
+# We are using AMI so keys commented
+#openshift_hosted_registry_storage_s3_kmskeyid=aws_kms_key_id
+#openshift_hosted_registry_storage_s3_accesskey=aws_access_key_id
+#openshift_hosted_registry_storage_s3_secretkey=aws_secret_access_key
+openshift_hosted_registry_storage_s3_bucket=my-s3-bucket-name
+openshift_hosted_registry_storage_s3_region=us-east-1
+openshift_hosted_registry_storage_s3_chunksize=26214400
+openshift_hosted_registry_storage_s3_rootdirectory=/registry
+openshift_hosted_registry_pullthrough=true
+openshift_hosted_registry_acceptschema2=true
+openshift_hosted_registry_enforcequota=true
+
+
+# Configure the multi-tenant SDN plugin (default is 'redhat/openshift-ovs-subnet')
+# os_sdn_network_plugin_name='redhat/openshift-ovs-multitenant'
+os_sdn_network_plugin_name='redhat/openshift-ovs-networkpolicy'
+
+
+osm_cluster_network_cidr=10.0.0.0/14
+openshift_portal_net=172.16.0.0/16
+
+openshift_master_api_port=443
+openshift_master_console_port=443
+
+# set exact RPM version (include - prefix)
+openshift_pkg_version=-3.11.43
+
+openshift_enable_service_catalog=true
+
+# I deployed this using dynamic EBS and had no issues with this configuration.
+# Prometheus Cluster Monitoring
+openshift_cluster_monitoring_operator_install=true
+openshift_cluster_monitoring_operator_prometheus_storage_enabled=true
+openshift_cluster_monitoring_operator_alertmanager_storage_enabled=true
+openshift_cluster_monitoring_operator_node_selector={'node-role.kubernetes.io/infra': 'true'}
+openshift_cluster_monitoring_operator_prometheus_storage_capacity=50Gi
+openshift_cluster_monitoring_operator_alertmanager_storage_capacity=2Gi

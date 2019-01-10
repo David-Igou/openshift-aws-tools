@@ -1,0 +1,38 @@
+---
+
+# ansible-playbook add-aws-private-dns.yml --extra-vars="target=<<target-name>> vpc_private_dns=<<server-ip>>"
+# This playbook requires you know the IP of the VPC's private DNS server. this is normally the second IP after the network address. This IP is reserved by AWS, for example:
+# If your network address is 10.0.0.0/24, your private DNS IP  will be 10.0.0.2
+
+- hosts: "{{ target }}"
+  become: yes
+  tasks:
+
+  - name: Add Amazon hostnames and FQDN to /etc/hosts
+    lineinfile:
+      line: '{{ ansible_default_ipv4.address }} {{ inventory_hostname }} {{ inventory_hostname_short }} {{ ansible_nodename }} {{ ansible_hostname }}'
+      regexp: '^{{ ansible_default_ipv4.address }}'
+      state: present
+      path: /etc/hosts
+      backrefs: yes
+    when: ( 'ansible' not in group_names )
+
+  - name: Create ec2 dns file
+    lineinfile:
+      line: 'server=/ec2.internal/{{ vpc_private_dns }}'
+      state: present
+      path: /etc/dnsmasq.d/aws-dns.conf
+      create: true
+      owner: root
+      group: root
+      mode: 0644
+    when: ( 'ansible' not in group_names )
+    notify: restart_dnsmasq_service
+
+  handlers:
+  - name: restart_dnsmasq_service
+    service:
+      name: dnsmasq
+      state: restarted
+    when: ( 'ansible' not in group_names )
+
